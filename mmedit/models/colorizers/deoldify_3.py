@@ -15,10 +15,11 @@ from torch.nn.utils.spectral_norm import spectral_norm
 
 from ..registry import MODELS
 
-from fastai.layers import NormType  # 这个改了会报错
+# from fastai.layers import NormType  # 这个改了会报错
+from .blocks import NormType  # 这个改了会报错
 from fastai.callbacks.hooks import Hook
 
-from .blocks import init_default, relu, SelfAttention, SequentialEx, PixelShuffle_ICNR
+from .blocks import (init_default, relu, SelfAttention, SequentialEx, PixelShuffle_ICNR)
 from .blocks import SigmoidRange, res_block, icnr, batchnorm_2d, MergeLayer
 from .utils import Sizes, model_sizes, hook_outputs, dummy_eval, in_channels, ifnone
 
@@ -120,7 +121,7 @@ class UnetBlockWide(nn.Module):
         up_in_c: int,
         x_in_c: int,
         n_out: int,
-        hook: Hook,
+        # hook: Hook,
         final_div: bool = True,
         blur: bool = False,
         leaky: float = None,
@@ -128,7 +129,7 @@ class UnetBlockWide(nn.Module):
         **kwargs
     ):
         super().__init__()
-        self.hook = hook
+        # self.hook = hook
         up_out = x_out = n_out // 2
         self.shuf = CustomPixelShuffle_ICNR(
             up_in_c, up_out, blur=blur, leaky=leaky, **kwargs
@@ -140,8 +141,8 @@ class UnetBlockWide(nn.Module):
         )
         self.relu = relu(leaky=leaky)
 
-    def forward(self, up_in: Tensor) -> Tensor:
-        s = self.hook.stored
+    def forward(self, up_in: Tensor, s: Tensor) -> Tensor:
+        # s = self.hook.stored
         up_out = self.shuf(up_in)
         ssh = s.shape[-2:]
         if ssh != up_out.shape[-2:]:
@@ -152,7 +153,7 @@ class UnetBlockWide(nn.Module):
 
 @MODELS.register_module()
 # class DynamicUnetWide(SequentialEx):
-class DeOldify(SequentialEx):
+class DeOldify(nn.Module):
     "Create a U-Net from a given architecture."
 
     def __init__(
@@ -165,7 +166,8 @@ class DeOldify(SequentialEx):
         y_range: Optional[Tuple[float, float]] = None,  # SigmoidRange
         last_cross: bool = True,
         bottle: bool = False,
-        norm_type: Optional[NormType] = NormType.Batch,
+        norm_type: Optional[NormType] = NormType.Spectral,
+        # norm_type: Optional[NormType] = NormType.Batch,
         nf_factor: int = 1,
         **kwargs
     ):
@@ -189,7 +191,9 @@ class DeOldify(SequentialEx):
             ),
         ).eval()
         x = middle_conv(x)
-        layers = [encoder, batchnorm_2d(ni), nn.ReLU(), middle_conv]
+        layers_enc = [encoder, batchnorm_2d(ni), nn.ReLU(), middle_conv]
+        layers_dec = []
+        layers_post = []
 
         for i, idx in enumerate(sfs_idxs):
             not_final = i != len(sfs_idxs) - 1
@@ -203,7 +207,7 @@ class DeOldify(SequentialEx):
                 up_in_c,
                 x_in_c,
                 n_out,
-                self.sfs[i],
+                # self.sfs[i],
                 final_div=not_final,
                 blur=blur,
                 self_attention=sa,
@@ -211,22 +215,43 @@ class DeOldify(SequentialEx):
                 extra_bn=extra_bn,
                 **kwargs_0
             ).eval()
-            layers.append(unet_block)
-            x = unet_block(x)
+            layers_dec.append(unet_block)
+            x = unet_block(x, self.sfs[i].stored)
 
         ni = x.shape[1]
         if imsize != sfs_szs[0][-2:]:
-            layers.append(PixelShuffle_ICNR(ni, **kwargs_0))
+            layers_post.append(PixelShuffle_ICNR(ni, **kwargs_0))
         if last_cross:
-            layers.append(MergeLayer(dense=True))
+            layers_post.append(MergeLayer(dense=True))
             ni += in_channels(encoder)
-            layers.append(res_block(ni, bottle=bottle, norm_type=norm_type, **kwargs_0))
-        layers += [
+            layers_post.append(res_block(ni, bottle=bottle, norm_type=norm_type, **kwargs_0))
+        layers_post += [
             custom_conv_layer(ni, n_classes, ks=1, use_activ=False, norm_type=norm_type)
         ]
         if y_range is not None:
-            layers.append(SigmoidRange(*y_range))
-        super().__init__(*layers)
+            layers_post.append(SigmoidRange(*y_range))
+        # super().__init__(*layers)
+        super().__init__()
+        self.layers_enc = nn.ModuleList(layers_enc)
+        self.layers_dec = nn.ModuleList(layers_dec)
+        self.layers_post = nn.ModuleList(layers_post)
+
+    def forward(self, x):
+        res = x
+        for l in self.layers_enc:
+            res = l(res)
+
+        for l, hook in zip(self.layers_dec, self.sfs):
+            s = hook.stored
+            res = l(res, s)
+
+        for l in self.layers_post:
+            res.orig = x
+            nres = l(res)
+            # We have to remove res.orig to avoid hanging refs and therefore memory leaks
+            res.orig = None
+            res = nres
+        return res
 
     def __del__(self):
         if hasattr(self, "sfs"):

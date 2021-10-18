@@ -1,7 +1,7 @@
 # model settings
 from fastai.vision import models
 from fastai.vision.learner import create_body
-from fastai.layers import NormType
+# from fastai.layers import NormType
 
 
 model = dict(
@@ -16,7 +16,7 @@ model = dict(
     last_cross=True,
     bottle=False,
     # norm_type="NormSpectral",
-    norm_type=NormType.Spectral,
+    # norm_type=NormType.Spectral,
     nf_factor=2
     # backbone=dict(
     #     type='SimpleEncoderDecoder',
