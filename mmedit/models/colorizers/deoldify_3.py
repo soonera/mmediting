@@ -5,8 +5,7 @@
 # in_channels可，hook_outputs可, NormType不可
 
 
-from typing import List, Tuple, Callable, Optional
-import numpy as np
+from typing import Tuple, Callable, Optional
 import torch
 from torch import Tensor, nn
 from torch.nn import functional as F
@@ -15,30 +14,28 @@ from torch.nn.utils.spectral_norm import spectral_norm
 
 from ..registry import MODELS
 
-# from fastai.layers import NormType  # 这个改了会报错
 from .blocks import NormType  # 这个改了会报错
-from fastai.callbacks.hooks import Hook
 
-from .blocks import (init_default, relu, SelfAttention, SequentialEx, PixelShuffle_ICNR)
-from .blocks import SigmoidRange, res_block, icnr, batchnorm_2d, MergeLayer
-from .utils import Sizes, model_sizes, hook_outputs, dummy_eval, in_channels, ifnone
+from .blocks import (init_default, relu, SelfAttention, PixelShuffle_ICNR, SigmoidRange, res_block, icnr, batchnorm_2d,
+                     MergeLayer)
+from .utils import ifnone
 
 
 def custom_conv_layer(
-    ni: int,
-    nf: int,
-    ks: int = 3,
-    stride: int = 1,
-    padding: int = None,
-    bias: bool = None,
-    is_1d: bool = False,
-    norm_type: Optional[NormType] = NormType.Batch,
-    use_activ: bool = True,
-    leaky: float = None,
-    transpose: bool = False,
-    init: Callable = nn.init.kaiming_normal_,
-    self_attention: bool = False,
-    extra_bn: bool = False,
+        ni: int,
+        nf: int,
+        ks: int = 3,
+        stride: int = 1,
+        padding: int = None,
+        bias: bool = None,
+        is_1d: bool = False,
+        norm_type: Optional[NormType] = NormType.Batch,
+        use_activ: bool = True,
+        leaky: float = None,
+        transpose: bool = False,
+        init: Callable = nn.init.kaiming_normal_,
+        self_attention: bool = False,
+        extra_bn: bool = False,
 ):
     "Create a sequence of convolutional (`ni` to `nf`), ReLU (if `use_activ`) and batchnorm (if `bn`) layers."
     if padding is None:
@@ -71,28 +68,17 @@ def custom_conv_layer(
     return nn.Sequential(*layers)
 
 
-def _get_sfs_idxs(sizes: Sizes) -> List[int]:
-    "Get the indexes of the layers where the size of the activation changes."
-    feature_szs = [size[-1] for size in sizes]
-    sfs_idxs = list(
-        np.where(np.array(feature_szs[:-1]) != np.array(feature_szs[1:]))[0]
-    )
-    if feature_szs[0] != feature_szs[1]:
-        sfs_idxs = [0] + sfs_idxs
-    return sfs_idxs
-
-
 class CustomPixelShuffle_ICNR(nn.Module):
     "Upsample by `scale` from `ni` filters to `nf` (default `ni`), using `nn.PixelShuffle`, `icnr` init, and `weight_norm`."
 
     def __init__(
-        self,
-        ni: int,
-        nf: int = None,
-        scale: int = 2,
-        blur: bool = False,
-        leaky: float = None,
-        **kwargs
+            self,
+            ni: int,
+            nf: int = None,
+            scale: int = 2,
+            blur: bool = False,
+            leaky: float = None,
+            **kwargs
     ):
         super().__init__()
         nf = ifnone(nf, ni)
@@ -117,19 +103,17 @@ class UnetBlockWide(nn.Module):
     "A quasi-UNet block, using `PixelShuffle_ICNR upsampling`."
 
     def __init__(
-        self,
-        up_in_c: int,
-        x_in_c: int,
-        n_out: int,
-        # hook: Hook,
-        final_div: bool = True,
-        blur: bool = False,
-        leaky: float = None,
-        self_attention: bool = False,
-        **kwargs
+            self,
+            up_in_c: int,
+            x_in_c: int,
+            n_out: int,
+            final_div: bool = True,
+            blur: bool = False,
+            leaky: float = None,
+            self_attention: bool = False,
+            **kwargs
     ):
         super().__init__()
-        # self.hook = hook
         up_out = x_out = n_out // 2
         self.shuf = CustomPixelShuffle_ICNR(
             up_in_c, up_out, blur=blur, leaky=leaky, **kwargs
@@ -142,7 +126,6 @@ class UnetBlockWide(nn.Module):
         self.relu = relu(leaky=leaky)
 
     def forward(self, up_in: Tensor, s: Tensor) -> Tensor:
-        # s = self.hook.stored
         up_out = self.shuf(up_in)
         ssh = s.shape[-2:]
         if ssh != up_out.shape[-2:]:
@@ -152,35 +135,27 @@ class UnetBlockWide(nn.Module):
 
 
 @MODELS.register_module()
-# class DynamicUnetWide(SequentialEx):
 class DeOldify(nn.Module):
     "Create a U-Net from a given architecture."
 
     def __init__(
-        self,
-        encoder: nn.Module,
-        n_classes: int,
-        blur: bool = False,
-        blur_final=True,
-        self_attention: bool = False,
-        y_range: Optional[Tuple[float, float]] = None,  # SigmoidRange
-        last_cross: bool = True,
-        bottle: bool = False,
-        norm_type: Optional[NormType] = NormType.Spectral,
-        # norm_type: Optional[NormType] = NormType.Batch,
-        nf_factor: int = 1,
-        **kwargs
+            self,
+            encoder: nn.Module,
+            n_classes: int,
+            blur: bool = False,
+            self_attention: bool = False,
+            y_range: Optional[Tuple[float, float]] = None,  # SigmoidRange
+            last_cross: bool = True,
+            bottle: bool = False,
+            norm_type: Optional[NormType] = NormType.Spectral,
+            nf_factor: int = 1,
+            **kwargs
     ):
 
         nf = 512 * nf_factor
         extra_bn = norm_type == NormType.Spectral
-        imsize = (256, 256)
-        sfs_szs = model_sizes(encoder, size=imsize)
-        sfs_idxs = list(reversed(_get_sfs_idxs(sfs_szs)))
-        self.sfs = hook_outputs([encoder[i] for i in sfs_idxs], detach=False)
-        x = dummy_eval(encoder, imsize).detach()
 
-        ni = sfs_szs[-1][1]
+        ni = 2048
         kwargs_0 = {}  # 自己加的
         middle_conv = nn.Sequential(
             custom_conv_layer(
@@ -190,15 +165,20 @@ class DeOldify(nn.Module):
                 ni * 2, ni, norm_type=norm_type, extra_bn=extra_bn, **kwargs_0
             ),
         ).eval()
-        x = middle_conv(x)
-        layers_enc = [encoder, batchnorm_2d(ni), nn.ReLU(), middle_conv]
+
+        layers_enc = [encoder]
+        layers_mid = [batchnorm_2d(ni), nn.ReLU(), middle_conv]
         layers_dec = []
         layers_post = []
 
-        for i, idx in enumerate(sfs_idxs):
+        sfs_idxs = [6, 5, 4, 2]
+        x_in_c_list = [1024, 512, 256, 64]
+        up_in_c_list = [2048, 512, 512, 512]
+
+        for i in range(len(sfs_idxs)):
             not_final = i != len(sfs_idxs) - 1
-            up_in_c, x_in_c = int(x.shape[1]), int(sfs_szs[idx][1])
-            do_blur = blur and (not_final or blur_final)
+            up_in_c = up_in_c_list[i]
+            x_in_c = x_in_c_list[i]
             sa = self_attention and (i == len(sfs_idxs) - 3)
 
             n_out = nf if not_final else nf // 2
@@ -207,7 +187,6 @@ class DeOldify(nn.Module):
                 up_in_c,
                 x_in_c,
                 n_out,
-                # self.sfs[i],
                 final_div=not_final,
                 blur=blur,
                 self_attention=sa,
@@ -216,45 +195,44 @@ class DeOldify(nn.Module):
                 **kwargs_0
             ).eval()
             layers_dec.append(unet_block)
-            x = unet_block(x, self.sfs[i].stored)
 
-        ni = x.shape[1]
-        if imsize != sfs_szs[0][-2:]:
-            layers_post.append(PixelShuffle_ICNR(ni, **kwargs_0))
+        ni = 256
+        layers_post.append(PixelShuffle_ICNR(ni, **kwargs_0))
         if last_cross:
             layers_post.append(MergeLayer(dense=True))
-            ni += in_channels(encoder)
+            ni += n_classes
             layers_post.append(res_block(ni, bottle=bottle, norm_type=norm_type, **kwargs_0))
         layers_post += [
             custom_conv_layer(ni, n_classes, ks=1, use_activ=False, norm_type=norm_type)
         ]
         if y_range is not None:
             layers_post.append(SigmoidRange(*y_range))
-        # super().__init__(*layers)
+
         super().__init__()
         self.layers_enc = nn.ModuleList(layers_enc)
+        self.layers_mid = nn.ModuleList(layers_mid)
         self.layers_dec = nn.ModuleList(layers_dec)
         self.layers_post = nn.ModuleList(layers_post)
 
     def forward(self, x):
         res = x
-        for l in self.layers_enc:
-            res = l(res)
+        x1, x2, x3, x4 = x, x, x, x
 
-        for l, hook in zip(self.layers_dec, self.sfs):
-            s = hook.stored
-            res = l(res, s)
+        for layer in self.layers_enc:
+            [x1, x2, x3, x4, res] = layer(res)
 
-        for l in self.layers_post:
-            res.orig = x
-            nres = l(res)
-            # We have to remove res.orig to avoid hanging refs and therefore memory leaks
-            res.orig = None
-            res = nres
+        for layer in self.layers_mid:
+            res = layer(res)
+
+        for layer, s in zip(self.layers_dec, [x4, x3, x2, x1]):
+            res = layer(res, s)
+
+        for idx, layer in enumerate(self.layers_post):
+            if idx == 0:
+                res = layer(res)
+            elif idx == 1:
+                res = torch.cat([res, x], dim=1)
+            elif idx > 1:
+                res = layer(res)
+
         return res
-
-    def __del__(self):
-        if hasattr(self, "sfs"):
-            self.sfs.remove()
-
-

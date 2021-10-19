@@ -36,6 +36,8 @@ def init_colorization_model(config, checkpoint=None, device='cuda:0'):
 
         # 自己加的
         keys_0 = model.state_dict().keys()
+        # torch.save({'model': model.state_dict()}, 'keys.pth')
+
         keys_1 = params['model'].keys()
         print(keys_0 == keys_1)
 

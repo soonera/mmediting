@@ -14,7 +14,7 @@ from .registry import BACKBONES, COMPONENTS, LOSSES, MODELS
 from .restorers import ESRGAN, SRGAN, BasicRestorer
 from .synthesizers import CycleGAN, Pix2Pix
 from .transformers import SearchTransformer
-from .colorizers import DeOldify
+from .colorizers import DeOldify, resnet101
 
 
 __all__ = [
@@ -24,5 +24,5 @@ __all__ = [
     'GLInpaintor', 'PConvInpaintor', 'SRGAN', 'ESRGAN', 'GCA',
     'TwoStageInpaintor', 'IndexNet', 'DeepFillv1Inpaintor', 'Pix2Pix',
     'CycleGAN', 'SearchTransformer', 'LTE', 'FeedbackHourglass',
-    'DeOldify'
+    'DeOldify', 'resnet101'
 ]

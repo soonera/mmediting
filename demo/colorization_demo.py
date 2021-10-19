@@ -1,11 +1,9 @@
 # Copyright (c) OpenMMLab. All rights reserved.
 import argparse
 
-import mmcv
 import torch
 
 from mmedit.apis import colorization_inference, init_colorization_model
-
 
 
 def parse_args():
