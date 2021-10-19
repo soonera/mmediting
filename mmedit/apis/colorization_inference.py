@@ -3,10 +3,15 @@ import numpy as np
 
 import mmcv
 import torch
+from torch import Tensor
 
 from mmcv.runner import load_checkpoint
 
 from mmedit.models import build_model
+
+import PIL
+import cv2
+from PIL import Image
 
 
 def init_colorization_model(config, checkpoint=None, device='cuda:0'):
@@ -49,7 +54,39 @@ def init_colorization_model(config, checkpoint=None, device='cuda:0'):
     return model
 
 
-def colorization_inference(model, img):
+def pil2tensor(image, dtype):
+    "Convert PIL style `image` array to torch style image tensor."
+    a = np.asarray(image)
+    if a.ndim == 2: a = np.expand_dims(a, 2)
+    a = np.transpose(a, (1, 0, 2))
+    a = np.transpose(a, (2, 1, 0))
+    return torch.from_numpy(a.astype(dtype, copy=False) )
+
+
+def norm(x, mean, std):
+    x = (x - mean[..., None, None]) / std[..., None, None]
+    return x
+
+
+def denorm(x, mean, std):
+    x = (x + mean[..., None, None]) * std[..., None, None]
+    return x
+
+
+def post_process(raw_color, orig):
+    color_np = np.asarray(raw_color)
+    orig_np = np.asarray(orig)
+    color_yuv = cv2.cvtColor(color_np, cv2.COLOR_BGR2YUV)
+    # do a black and white transform first to get better luminance values
+    orig_yuv = cv2.cvtColor(orig_np, cv2.COLOR_BGR2YUV)
+    hires = np.copy(orig_yuv)
+    hires[:, :, 1:3] = color_yuv[:, :, 1:3]
+    final = cv2.cvtColor(hires, cv2.COLOR_YUV2BGR)
+    final = Image.fromarray(final)
+    return final
+
+
+def colorization_inference(model, img_path):
     """Inference image with the model.
 
     Args:
@@ -59,16 +96,53 @@ def colorization_inference(model, img):
     Returns:
         np.ndarray: The predicted colorization result.
     """
-    # cfg = model.cfg
-    # device = next(model.parameters()).device  # model device
+    # # cfg = model.cfg
+    # # device = next(model.parameters()).device  # model device
+    #
+    # # prepare data
+    # data = torch.load(img, map_location='cpu')
+    # x, y, res, out = data.values()
+    # x_ = x.unsqueeze(0).cuda()
+    #
+    # # forward the model
+    # with torch.no_grad():
+    #     results = model.forward(x_).squeeze()
 
-    # prepare data
-    data = torch.load(img, map_location='cpu')
-    x, y, res, out = data.values()
-    x_ = x.unsqueeze(0).cuda()
+    orig_image = PIL.Image.open(img_path).convert('RGB')
+    render_factor = 10
+    render_base = 16
+    render_sz = render_factor * render_base
+    targ_sz = (render_sz, render_sz)
+    model_image = orig_image.resize(targ_sz, resample=PIL.Image.BILINEAR)
+    x = pil2tensor(model_image, np.float32)
+    torch.save(x, '../my_x_0.pt')
+    # 这里有一个norm的操作未实现
+    x.div_(255)
 
-    # forward the model
+
+    # imagenet的均值和方差
+    mean = torch.tensor([0.4850, 0.4560, 0.4060])
+    std = torch.tensor([0.2290, 0.2240, 0.2250])
+
+    x = norm(x, mean, std)
+    # torch.save(x, 'my_x.pt')
+    x_ = x.cuda()
+
     with torch.no_grad():
-        results = model.forward(x_).squeeze()
+        results = model.forward(x_.unsqueeze(0)).squeeze()
 
-    return results
+    # out = results[0]
+    # out = self.denorm(out.px, do_x=False)
+    # out = image2np(out * 255).astype(np.uint8)
+
+    # results = denorm(results.cpu(), mean, std)
+
+    out = (results.cpu().numpy()*255).astype('uint8').transpose(1, 2, 0)
+    out = Image.fromarray(out)
+
+    # return PIL.fromarray(out)
+
+    raw_color = out.resize(orig_image.size, resample=PIL.Image.BILINEAR)
+    final = post_process(raw_color, orig_image)
+
+    return final

@@ -1,5 +1,5 @@
 # Copyright (c) OpenMMLab. All rights reserved.
-from .deoldify_3 import DeOldify
+from .deoldify import DeOldify
 from .resnet import resnet101
 
 

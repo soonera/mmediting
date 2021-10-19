@@ -1,11 +1,24 @@
-from typing import Callable, Optional
 import torch
-from torch import Tensor, nn
+from torch import nn
+from torch import Tensor
 from torch.nn import functional as F
 from torch.nn.utils.weight_norm import weight_norm
 from torch.nn.utils.spectral_norm import spectral_norm
 
-from .utils import LayerFunc, sigmoid_range, ifnone
+from typing import Callable, Any
+
+
+LayerFunc = Callable[[nn.Module], None]
+
+
+def sigmoid_range(x, low, high):
+    "Sigmoid function with range `(low, high)`"
+    return torch.sigmoid(x) * (high - low) + low
+
+
+def ifnone(a: Any, b: Any) -> Any:
+    "`a` if `a` is not None, otherwise `b`."
+    return b if a is None else a
 
 
 def init_default(m: nn.Module, func: LayerFunc = nn.init.kaiming_normal_) -> nn.Module:

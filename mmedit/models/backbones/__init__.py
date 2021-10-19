@@ -15,7 +15,6 @@ from .sr_backbones import (EDSR, LIIFEDSR, LIIFRDN, RDN, SRCNN, BasicVSRNet,
                            BasicVSRPlusPlus, DICNet, EDVRNet, GLEANStyleGANv2,
                            IconVSR, MSRResNet, RRDBNet, TDANNet, TOFlow,
                            TTSRNet)
-from .colorization_backbones import ResNet101
 
 __all__ = [
     'MSRResNet', 'VGG16', 'PlainDecoder', 'SimpleEncoderDecoder',
@@ -28,6 +27,5 @@ __all__ = [
     'IndexNetDecoder', 'TOFlow', 'ResGCAEncoder', 'ResGCADecoder', 'SRCNN',
     'UnetGenerator', 'ResnetGenerator', 'FBAResnetDilated', 'FBADecoder',
     'BasicVSRNet', 'IconVSR', 'TTSRNet', 'GLEANStyleGANv2', 'TDANNet',
-    'LIIFEDSR', 'LIIFRDN', 'BasicVSRPlusPlus',
-    'ResNet101'
+    'LIIFEDSR', 'LIIFRDN', 'BasicVSRPlusPlus'
 ]
