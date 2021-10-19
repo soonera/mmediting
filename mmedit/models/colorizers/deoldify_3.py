@@ -1,10 +1,3 @@
-# 不改norm, 改Relu可,改SigmoidRange可，SelfAttention可，
-# PixelShuffle_ICNR可， MergeLayer可， SequentialEx可，icnr可，List和Tuple可，
-# res_block可, init_default可, Sizes可，Callable可，Optional可, batchnorm_2d可
-# weight_norm可，spectral_norm可, ifnone可，LayerFunc可，dummy_eval可，model_sizes可
-# in_channels可，hook_outputs可, NormType不可
-
-
 from typing import Tuple, Callable, Optional
 import torch
 from torch import Tensor, nn
@@ -13,8 +6,6 @@ from torch.nn.utils.weight_norm import weight_norm
 from torch.nn.utils.spectral_norm import spectral_norm
 
 from ..registry import MODELS
-
-from .blocks import NormType  # 这个改了会报错
 
 from .blocks import (init_default, relu, SelfAttention, PixelShuffle_ICNR, SigmoidRange, res_block, icnr, batchnorm_2d,
                      MergeLayer)
@@ -29,7 +20,7 @@ def custom_conv_layer(
         padding: int = None,
         bias: bool = None,
         is_1d: bool = False,
-        norm_type: Optional[NormType] = NormType.Batch,
+        norm_type: str = "NormBatch",
         use_activ: bool = True,
         leaky: float = None,
         transpose: bool = False,
@@ -40,7 +31,7 @@ def custom_conv_layer(
     "Create a sequence of convolutional (`ni` to `nf`), ReLU (if `use_activ`) and batchnorm (if `bn`) layers."
     if padding is None:
         padding = (ks - 1) // 2 if not transpose else 0
-    bn = norm_type in (NormType.Batch, NormType.BatchZero) or extra_bn == True
+    bn = norm_type in ("NormBatch", "NormBatchZero") or extra_bn == True
 
     if bias is None:
         bias = not bn
@@ -52,9 +43,9 @@ def custom_conv_layer(
         init,
     )
 
-    if norm_type == NormType.Weight:
+    if norm_type == "NormWeight":
         conv = weight_norm(conv)
-    elif norm_type == NormType.Spectral:
+    elif norm_type == "NormSpectral":
         conv = spectral_norm(conv)
 
     layers = [conv]
@@ -147,13 +138,13 @@ class DeOldify(nn.Module):
             y_range: Optional[Tuple[float, float]] = None,  # SigmoidRange
             last_cross: bool = True,
             bottle: bool = False,
-            norm_type: Optional[NormType] = NormType.Spectral,
+            norm_type: str = "NormSpectral",
             nf_factor: int = 1,
             **kwargs
     ):
 
         nf = 512 * nf_factor
-        extra_bn = norm_type == NormType.Spectral
+        extra_bn = norm_type == "NormSpectral"
 
         ni = 2048
         kwargs_0 = {}  # 自己加的
@@ -197,7 +188,7 @@ class DeOldify(nn.Module):
             layers_dec.append(unet_block)
 
         ni = 256
-        layers_post.append(PixelShuffle_ICNR(ni, **kwargs_0))
+        layers_post.append(PixelShuffle_ICNR(ni, norm_type="NormWeight", **kwargs_0))
         if last_cross:
             layers_post.append(MergeLayer(dense=True))
             ni += n_classes

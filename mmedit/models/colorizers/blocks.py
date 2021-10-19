@@ -4,10 +4,6 @@ from torch import Tensor, nn
 from torch.nn import functional as F
 from torch.nn.utils.weight_norm import weight_norm
 from torch.nn.utils.spectral_norm import spectral_norm
-from enum import Enum
-
-# from fastai.layers import NormType  # 这个改了会报错
-NormType = Enum('NormType', 'Batch BatchZero Weight Spectral')
 
 from .utils import LayerFunc, sigmoid_range, ifnone
 
@@ -74,7 +70,7 @@ class SequentialEx(nn.Module):
 class PixelShuffle_ICNR(nn.Module):
     "Upsample by `scale` from `ni` filters to `nf` (default `ni`), using `nn.PixelShuffle`, `icnr` init, and `weight_norm`."
 
-    def __init__(self, ni: int, nf: int = None, scale: int = 2, blur: bool = False, norm_type=NormType.Weight,
+    def __init__(self, ni: int, nf: int = None, scale: int = 2, blur: bool = False, norm_type="Norm.Weight",
                  leaky: float = None):
         super().__init__()
         nf = ifnone(nf, ni)
@@ -103,11 +99,11 @@ class SigmoidRange(nn.Module):
     def forward(self, x): return sigmoid_range(x, self.low, self.high)
 
 
-def res_block(nf, dense: bool = False, norm_type: Optional[NormType] = NormType.Batch, bottle: bool = False,
-              **conv_kwargs):
+def res_block(nf, dense: bool = False, norm_type: str = "NormBatch", bottle: bool = False,
+                            **conv_kwargs):
     "Resnet block of `nf` features. `conv_kwargs` are passed to `conv_layer`."
     norm2 = norm_type
-    if not dense and (norm_type == NormType.Batch): norm2 = NormType.BatchZero
+    if not dense and (norm_type == "NormBatch"): norm2 = "NormBatchZero"
     nf_inner = nf // 2 if bottle else nf
     return SequentialEx(conv_layer(nf, nf_inner, norm_type=norm_type, **conv_kwargs),
                         conv_layer(nf_inner, nf, norm_type=norm2, **conv_kwargs),
@@ -125,12 +121,12 @@ def icnr(x, scale=2, init=nn.init.kaiming_normal_):
     x.data.copy_(k)
 
 
-def batchnorm_2d(nf: int, norm_type: NormType = NormType.Batch):
+def batchnorm_2d(nf: int, norm_type: str = "NormBatch"):
     "A batchnorm2d layer with `nf` features initialized depending on `norm_type`."
     bn = nn.BatchNorm2d(nf)
     with torch.no_grad():
         bn.bias.fill_(1e-3)
-        bn.weight.fill_(0. if norm_type == NormType.BatchZero else 1.)
+        bn.weight.fill_(0. if norm_type == "NormBatchZero" else 1.)
     return bn
 
 
@@ -146,17 +142,18 @@ class MergeLayer(nn.Module):
 
 def conv_layer(ni: int, nf: int, ks: int = 3, stride: int = 1, padding: int = None, bias: bool = None,
                is_1d: bool = False,
-               norm_type: Optional[NormType] = NormType.Batch, use_activ: bool = True, leaky: float = None,
+               norm_type: str = "NormBatch",
+               use_activ: bool = True, leaky: float = None,
                transpose: bool = False, init: Callable = nn.init.kaiming_normal_, self_attention: bool = False):
     "Create a sequence of convolutional (`ni` to `nf`), ReLU (if `use_activ`) and batchnorm (if `bn`) layers."
     if padding is None: padding = (ks - 1) // 2 if not transpose else 0
-    bn = norm_type in (NormType.Batch, NormType.BatchZero)
+    bn = norm_type in ("NormBatch", "NormBatchZero")
     if bias is None: bias = not bn
     conv_func = nn.ConvTranspose2d if transpose else nn.Conv1d if is_1d else nn.Conv2d
     conv = init_default(conv_func(ni, nf, kernel_size=ks, bias=bias, stride=stride, padding=padding), init)
-    if norm_type == NormType.Weight:
+    if norm_type == "NormWeight":
         conv = weight_norm(conv)
-    elif norm_type == NormType.Spectral:
+    elif norm_type == "NormSpectral":
         conv = spectral_norm(conv)
     layers = [conv]
     if use_activ: layers.append(relu(True, leaky=leaky))
