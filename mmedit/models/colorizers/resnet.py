@@ -95,9 +95,11 @@ class ResNet(nn.Module):
 
     def _forward_impl(self, x: Tensor) -> list:
         # See note [TorchScript super()]
+        # outs = []
         x1 = self.conv1(x)
         x1 = self.bn1(x1)
         x2 = self.relu(x1)
+        # outs.append(x)
         x2 = self.maxpool(x2)
 
         x2 = self.layer1(x2)

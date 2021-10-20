@@ -69,7 +69,7 @@ def norm(x, mean, std):
 
 
 def denorm(x, mean, std):
-    x = (x + mean[..., None, None]) * std[..., None, None]
+    x = x * std[..., None, None] + mean[..., None, None]
     return x
 
 
@@ -117,7 +117,6 @@ def colorization_inference(model, img_path):
     x = pil2tensor(model_image, np.float32)
     x = x.cuda()
 
-    # 这里有一个norm的操作未实现
     x.div_(255)
 
     # imagenet的均值和方差
@@ -127,10 +126,11 @@ def colorization_inference(model, img_path):
     x_ = norm(x, mean, std)
 
 
+    model.eval()
     with torch.no_grad():
         results = model.forward(x_.unsqueeze(0)).squeeze().cpu()
 
-    results_1 = torch.load('/home/SENSETIME/renqin/PycharmProjects/mmediting-master/res.pt').squeeze(0)
+    # results = torch.load('/home/SENSETIME/renqin/PycharmProjects/mmediting-master/res.pt').squeeze(0)
     # results 比 results_1小，理论上应该相等
 
     results = denorm(results.detach().cpu(), mean.cpu(), std.cpu())
@@ -143,6 +143,9 @@ def colorization_inference(model, img_path):
     # return PIL.fromarray(out)
 
     raw_color = out.resize(orig_image.size, resample=PIL.Image.BILINEAR)
+    # import numpy as np
+    print(np.array(raw_color))
     final = post_process(raw_color, orig_image)
+    print(np.array(final))
 
     return final
