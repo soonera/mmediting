@@ -107,37 +107,37 @@ def colorization_inference(model, img_path):
     # # forward the model
     # with torch.no_grad():
     #     results = model.forward(x_).squeeze()
-
+    torch.cuda.empty_cache()
     orig_image = PIL.Image.open(img_path).convert('RGB')
     render_factor = 10
     render_base = 16
     render_sz = render_factor * render_base
     targ_sz = (render_sz, render_sz)
-    model_image = orig_image.resize(targ_sz, resample=PIL.Image.BILINEAR)
+    model_image = orig_image.resize(targ_sz, resample=PIL.Image.BILINEAR).convert('LA').convert('RGB')
     x = pil2tensor(model_image, np.float32)
-    torch.save(x, '../my_x_0.pt')
+    x = x.cuda()
+
     # 这里有一个norm的操作未实现
     x.div_(255)
 
-
     # imagenet的均值和方差
-    mean = torch.tensor([0.4850, 0.4560, 0.4060])
-    std = torch.tensor([0.2290, 0.2240, 0.2250])
+    mean = torch.tensor([0.4850, 0.4560, 0.4060]).cuda()
+    std = torch.tensor([0.2290, 0.2240, 0.2250]).cuda()
 
-    x = norm(x, mean, std)
-    # torch.save(x, 'my_x.pt')
-    x_ = x.cuda()
+    x_ = norm(x, mean, std)
+
 
     with torch.no_grad():
-        results = model.forward(x_.unsqueeze(0)).squeeze()
+        results = model.forward(x_.unsqueeze(0)).squeeze().cpu()
 
-    # out = results[0]
-    # out = self.denorm(out.px, do_x=False)
-    # out = image2np(out * 255).astype(np.uint8)
+    results_1 = torch.load('/home/SENSETIME/renqin/PycharmProjects/mmediting-master/res.pt').squeeze(0)
+    # results 比 results_1小，理论上应该相等
 
-    # results = denorm(results.cpu(), mean, std)
+    results = denorm(results.detach().cpu(), mean.cpu(), std.cpu())
 
-    out = (results.cpu().numpy()*255).astype('uint8').transpose(1, 2, 0)
+    results = results.float().clamp(min=0, max=1)
+
+    out = (results.numpy()*255).astype('uint8').transpose(1, 2, 0)
     out = Image.fromarray(out)
 
     # return PIL.fromarray(out)

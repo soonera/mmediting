@@ -9,6 +9,7 @@ model = dict(
     blur_final=True,
     self_attention=True,
     y_range=(-3.0, 3.0),
+    # y_range=(0.0, 1.0),
     last_cross=True,
     bottle=False,
     nf_factor=2
